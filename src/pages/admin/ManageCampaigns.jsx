@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, deleteDoc, doc, getDocs, where } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../firebase';
+import { db } from '../../firebase';
+import imageCompression from 'browser-image-compression';
 import { HeartHandshake, Plus, UploadCloud, FileText, FileSpreadsheet } from 'lucide-react';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 export default function ManageCampaigns() {
   const [formData, setFormData] = useState({ title: '', category: '', goal: '', image: '', description: '' });
   const [file, setFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [categories, setCategories] = useState([]);
   const [newCategory, setNewCategory] = useState('');
@@ -43,6 +46,28 @@ export default function ManageCampaigns() {
     }
   };
 
+  const compressAndConvertToBase64 = async (file) => {
+    try {
+      const options = {
+        maxSizeMB: 0.3,
+        maxWidthOrHeight: 800,
+        useWebWorker: true,
+        initialQuality: 0.7
+      };
+      const compressedFile = await imageCompression(file, options);
+      
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(compressedFile);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+      });
+    } catch (error) {
+      console.error("Error converting image:", error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -50,9 +75,7 @@ export default function ManageCampaigns() {
       let finalUrl = formData.image;
 
       if (file) {
-        const storageRef = ref(storage, `campaigns/${Date.now()}_${file.name}`);
-        const uploadTask = await uploadBytes(storageRef, file);
-        finalUrl = await getDownloadURL(uploadTask.ref);
+        finalUrl = await compressAndConvertToBase64(file);
       }
 
       await addDoc(collection(db, 'campaigns'), {
@@ -66,10 +89,12 @@ export default function ManageCampaigns() {
       alert("Campaign added successfully!");
       setFormData({ title: '', category: 'Health', goal: '', image: '', description: '' });
       setFile(null);
+      setPreviewUrl('');
+      setIsSubmitting(false);
+
     } catch (err) {
       console.error(err);
-      alert("Error adding campaign: " + err.message + "\n\n(If this says 'unauthorized', you need to click 'Get Started' in Firebase Storage in your console!)");
-    } finally {
+      alert("Error adding campaign: " + err.message);
       setIsSubmitting(false);
     }
   };
@@ -97,7 +122,7 @@ export default function ManageCampaigns() {
       const docPdf = new jsPDF();
       docPdf.setFontSize(22);
       docPdf.setTextColor(13, 138, 188); 
-      docPdf.text("GCC Koottayma - Campaign Report", 14, 22);
+      docPdf.text("Kuttiatoor Kootayma - Campaign Report", 14, 22);
       
       docPdf.setFontSize(12);
       docPdf.setTextColor(50, 50, 50);
@@ -106,7 +131,7 @@ export default function ManageCampaigns() {
       docPdf.text(`Goal: ₹ ${campaign.goal?.toLocaleString()}`, 14, 44);
       docPdf.text(`Raised: ₹ ${campaign.raised?.toLocaleString() || 0}`, 14, 50);
       
-      const tableColumn = ["Date", "Donor Name", "Amount (₹)"];
+      const tableColumn = ["Date", "Donor Name", "Amount (₹)", "Status", "Note"];
       const tableRows = [];
 
       const sorted = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
@@ -116,18 +141,23 @@ export default function ManageCampaigns() {
         const date = c.timestamp ? c.timestamp.toDate().toLocaleDateString() : 'Just now';
         const donor = memberMap[c.memberId] || 'Unknown Donor';
         const amount = c.amount;
+        const status = c.status || 'Completed';
+        const note = c.note || '';
         total += amount;
-        tableRows.push([date, donor, amount.toLocaleString()]);
+        tableRows.push([date, donor, amount.toLocaleString(), status, note]);
       });
       
-      tableRows.push(["", "Total (₹)", total.toLocaleString()]);
+      tableRows.push(["", "Total (₹)", total.toLocaleString(), "", ""]);
 
       autoTable(docPdf, {
         head: [tableColumn],
         body: tableRows,
         startY: 60,
-        theme: 'striped',
-        headStyles: { fillColor: [13, 138, 188] },
+        theme: 'grid',
+        headStyles: { fillColor: [13, 138, 188], textColor: 255, fontSize: 10, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 9 },
+        alternateRowStyles: { fillColor: [245, 247, 250] },
+        styles: { cellPadding: 3 },
       });
 
       docPdf.save(`Campaign_${campaign.title.replace(/ /g, '_')}_Report.pdf`);
@@ -146,27 +176,56 @@ export default function ManageCampaigns() {
       const memberMap = {};
       membersSnap.forEach(m => memberMap[m.id] = m.data().name);
 
-      const headers = ["Date", "Donor Name", "Amount (₹)"];
-      const rows = [headers.join(",")];
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Campaign Report');
+      
+      const headers = ["Date", "Donor Name", "Amount (₹)", "Status", "Note"];
+      const headerRow = worksheet.addRow(headers);
+      headerRow.eachCell((cell) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+      });
 
       const sorted = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
 
-      sorted.forEach(c => {
+      let total = 0;
+      sorted.forEach((c, index) => {
         const date = c.timestamp ? c.timestamp.toDate().toLocaleDateString() : 'Just now';
-        const donor = (memberMap[c.memberId] || 'Unknown Donor').replace(/"/g, '""');
-        const amount = c.amount;
-        rows.push(`"${date}","${donor}","${amount}"`);
+        const donor = memberMap[c.memberId] || 'Unknown Donor';
+        const amount = c.amount || 0;
+        const status = c.status || 'Completed';
+        const note = c.note || '';
+        total += amount;
+        
+        const addedRow = worksheet.addRow([date, donor, amount, status, note]);
+        addedRow.eachCell((cell, colNumber) => {
+          cell.alignment = { vertical: 'middle', horizontal: colNumber === 3 ? 'right' : 'left' };
+          cell.border = { top: {style:'thin', color: {argb:'FFE2E8F0'}}, left: {style:'thin', color: {argb:'FFE2E8F0'}}, bottom: {style:'thin', color: {argb:'FFE2E8F0'}}, right: {style:'thin', color: {argb:'FFE2E8F0'}} };
+          if (index % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+        });
       });
       
-      const csvString = rows.join("\n");
-      const blob = new Blob([csvString], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `Campaign_${campaign.title.replace(/ /g, '_')}_Report.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Add Total Row
+      const totalRow = worksheet.addRow(["", "Total (₹)", total, "", ""]);
+      totalRow.eachCell((cell) => {
+        cell.font = { bold: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }; // Light amber
+        cell.border = { top: {style:'medium'}, bottom: {style:'medium'} };
+      });
+
+      worksheet.columns.forEach(column => {
+        let maxLength = 0;
+        column.eachCell({ includeEmpty: true }, cell => {
+          const columnLength = cell.value ? cell.value.toString().length : 10;
+          if (columnLength > maxLength) maxLength = columnLength;
+        });
+        column.width = maxLength < 12 ? 12 : Math.min(maxLength + 2, 50);
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([buffer]), `Campaign_${campaign.title.replace(/ /g, '_')}_Report.xlsx`);
     } catch (err) {
       console.error(err);
       alert("Error generating report");
@@ -177,6 +236,7 @@ export default function ManageCampaigns() {
   const handleFileChange = (e) => {
     if (e.target.files[0]) {
       setFile(e.target.files[0]);
+      setPreviewUrl(URL.createObjectURL(e.target.files[0]));
     }
   };
 

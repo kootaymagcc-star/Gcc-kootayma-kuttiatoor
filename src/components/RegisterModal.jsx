@@ -2,36 +2,80 @@ import React, { useState } from 'react';
 import { X, CheckCircle } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import imageCompression from 'browser-image-compression';
 import './Modal.css';
 
 export default function RegisterModal({ isOpen, onClose }) {
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [photoFile, setPhotoFile] = useState(null);
 
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', profession: '', location: '', website: '' });
 
   if (!isOpen) return null;
 
+  const compressAndConvertToBase64 = async (file) => {
+    try {
+      const options = {
+        maxSizeMB: 0.3, // Reduced to make it even faster and smaller
+        maxWidthOrHeight: 600,
+        useWebWorker: true, // Prevents the browser from freezing (lag)
+        initialQuality: 0.6
+      };
+      const compressedFile = await imageCompression(file, options);
+      
+      // Convert compressed file to Base64 string
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(compressedFile);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+      });
+    } catch (error) {
+      console.error("Error converting image:", error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+    
     try {
+      let photoURL = '';
+      if (photoFile) {
+        photoURL = await compressAndConvertToBase64(photoFile);
+      }
+      
       await addDoc(collection(db, 'registrationRequests'), {
         ...formData,
+        photoURL: photoURL,
         status: 'pending',
         timestamp: serverTimestamp()
       });
+      
       setSubmitted(true);
       setTimeout(() => {
         setSubmitted(false);
         setFormData({ name: '', email: '', phone: '', profession: '', location: '', website: '' });
+        setPhotoFile(null);
+        setIsSubmitting(false);
         onClose();
-      }, 3000);
+      }, 500);
+
     } catch (error) {
-      console.error("Error adding document: ", error);
-      alert("Failed to send request. Please try again.");
+      console.error("Upload failed: ", error);
+      alert("Error: " + error.message);
+      setIsSubmitting(false);
     }
   };
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleFileChange = (e) => {
+    if (e.target.files[0]) {
+      setPhotoFile(e.target.files[0]);
+    }
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -81,8 +125,13 @@ export default function RegisterModal({ isOpen, onClose }) {
                 <input type="url" name="website" value={formData.website} onChange={handleChange} className="form-input" placeholder="https://..." />
               </div>
 
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '1rem', padding: '1rem', fontSize: '1.1rem' }}>
-                Submit Registration Request
+              <div className="form-group">
+                <label>Profile Photo (Optional)</label>
+                <input type="file" accept="image/*" onChange={handleFileChange} className="form-input" style={{ padding: '0.6rem' }} />
+              </div>
+
+              <button type="submit" disabled={isSubmitting} className="btn btn-primary" style={{ width: '100%', marginTop: '1rem', padding: '1rem', fontSize: '1.1rem', opacity: isSubmitting ? 0.7 : 1 }}>
+                {isSubmitting ? 'Submitting...' : 'Submit Registration Request'}
               </button>
             </form>
           </div>

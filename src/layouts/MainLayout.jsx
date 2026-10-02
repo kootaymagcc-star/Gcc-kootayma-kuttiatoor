@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Heart, Search, Bell, UserPlus, Info, Calendar as CalendarIcon, Image as ImageIcon, LayoutDashboard, Users, Briefcase } from 'lucide-react';
+import { Heart, Search, Bell, UserPlus, Info, Calendar as CalendarIcon, Image as ImageIcon, LayoutDashboard, Users, Briefcase, Share2, MessageCircle } from 'lucide-react';
 import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import RegisterModal from '../components/RegisterModal';
@@ -15,8 +15,8 @@ export default function MainLayout() {
     { path: '/campaigns', label: 'Campaigns', icon: <Heart size={20} /> },
     { path: '/events', label: 'Media', icon: <ImageIcon size={20} /> },
     { path: '/calendar', label: 'Calendar', icon: <CalendarIcon size={20} /> },
-    { path: '/members', label: 'Members', icon: <Users size={20} /> },
     { path: '/jobs', label: 'Job Board', icon: <Briefcase size={20} /> },
+    { path: '/classifieds', label: 'Ask & Help', icon: <MessageCircle size={20} /> },
   ];
 
   const navigate = useNavigate();
@@ -53,7 +53,7 @@ export default function MainLayout() {
           <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
             <Heart size={24} />
           </div>
-          <h1 style={{ fontSize: '1.25rem', margin: 0 }}><span className="text-gradient">GCC</span> Koottayma</h1>
+          <h1 style={{ fontSize: '1.25rem', margin: 0 }}><span className="text-gradient">Kuttiatoor</span> Kootayma</h1>
         </Link>
         
         <div className="nav-links">
@@ -124,19 +124,82 @@ export default function MainLayout() {
       <RegisterModal isOpen={isRegisterOpen} onClose={() => setIsRegisterOpen(false)} />
       <SearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
 
-      {/* Mobile Bottom Navigation */}
-      <div className="mobile-nav-bar" style={{ justifyContent: 'flex-start', overflowX: 'auto', flexWrap: 'nowrap', gap: '1.5rem', padding: '0.75rem 1rem' }}>
-        {navLinks.filter(link => link.path !== '/jobs').map((link) => (
-          <Link
-            key={link.path}
-            to={link.path}
-            className={`mobile-nav-link ${location.pathname === link.path ? 'active' : ''}`}
-            style={{ flexShrink: 0, minWidth: '60px' }}
-          >
-            {link.icon}
-            <span>{link.label}</span>
-          </Link>
-        ))}
+      {/* Small Glassmorphic iOS Style Nav */}
+      <div className="mobile-nav-bar" style={{ 
+        position: 'fixed',
+        bottom: '1rem',
+        left: '2rem',
+        right: '2rem',
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        padding: '6px', 
+        background: 'rgba(255, 255, 255, 0.75)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255, 255, 255, 0.8)',
+        borderRadius: '99px',
+        boxShadow: '0 8px 32px rgba(15, 23, 42, 0.1)',
+        zIndex: 1000
+      }}>
+        {navLinks.filter(link => link.path !== '/jobs' && link.path !== '/classifieds').map((link) => {
+          const isActive = location.pathname === link.path;
+          return (
+            <Link
+              key={link.path}
+              to={link.path}
+              style={{ 
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '6px 2px',
+                minWidth: '50px',
+                textDecoration: 'none',
+                color: isActive ? '#0ea5e9' : '#64748b',
+                flex: 1,
+                borderRadius: '99px',
+                background: isActive ? 'rgba(14, 165, 233, 0.15)' : 'transparent',
+                transition: 'background 0.2s ease, color 0.2s ease'
+              }}
+            >
+              {/* Optional Notification Badge */}
+              {link.label === 'Campaigns' && (
+                <div style={{
+                  position: 'absolute',
+                  top: '2px',
+                  right: '15%',
+                  background: '#ef4444', 
+                  color: 'white',
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  padding: '1px 5px',
+                  borderRadius: '10px',
+                  zIndex: 2
+                }}>
+                  3
+                </div>
+              )}
+              
+              <div style={{ marginBottom: '2px' }}>
+                {React.cloneElement(link.icon, { 
+                  size: 20, 
+                  color: isActive ? '#0ea5e9' : '#64748b',
+                  fill: isActive ? '#0ea5e9' : 'none',
+                  strokeWidth: isActive ? 0 : 2
+                })}
+              </div>
+              
+              <span style={{ 
+                fontSize: '9px', 
+                fontWeight: isActive ? 700 : 500,
+                letterSpacing: '0.2px'
+              }}>
+                {link.label}
+              </span>
+            </Link>
+          )
+        })}
       </div>
     </div>
   );

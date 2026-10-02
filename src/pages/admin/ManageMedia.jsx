@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../firebase';
+import { db } from '../../firebase';
+import imageCompression from 'browser-image-compression';
 import { PlusCircle, Image as ImageIcon, Video, UploadCloud } from 'lucide-react';
 
 export default function ManageMedia() {
@@ -31,6 +31,28 @@ export default function ManageMedia() {
     }
   };
 
+  const compressAndConvertToBase64 = async (file) => {
+    try {
+      const options = {
+        maxSizeMB: 0.3,
+        maxWidthOrHeight: 800,
+        useWebWorker: true,
+        initialQuality: 0.7
+      };
+      const compressedFile = await imageCompression(file, options);
+      
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(compressedFile);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+      });
+    } catch (error) {
+      console.error("Error converting image:", error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -47,9 +69,13 @@ export default function ManageMedia() {
       }
 
       if (file) {
-        const storageRef = ref(storage, `media/${Date.now()}_${file.name}`);
-        const uploadTask = await uploadBytes(storageRef, file);
-        finalUrl = await getDownloadURL(uploadTask.ref);
+        if (formData.type === 'image') {
+          finalUrl = await compressAndConvertToBase64(file);
+        } else {
+          alert("Video Base64 conversion is not supported due to database size limits! Please use an external link for videos.");
+          setIsSubmitting(false);
+          return;
+        }
       }
 
       await addDoc(collection(db, 'posts'), {
@@ -59,13 +85,15 @@ export default function ManageMedia() {
         mediaUrl: finalUrl,
         timestamp: serverTimestamp()
       });
+      
       alert("Post added successfully!");
       setFormData({ title: '', type: 'image', mediaUrl: '', description: '' });
       setFile(null);
+      setIsSubmitting(false);
+
     } catch (err) {
       console.error(err);
-      alert("Error adding post.");
-    } finally {
+      alert("Error adding post: " + err.message);
       setIsSubmitting(false);
     }
   };

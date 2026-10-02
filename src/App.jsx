@@ -9,10 +9,10 @@ import AdminLayout from './layouts/AdminLayout';
 import Dashboard from './pages/public/Dashboard';
 import Campaigns from './pages/public/Campaigns';
 import Events from './pages/public/Events';
-import Members from './pages/public/Members';
 import CalendarPage from './pages/public/CalendarPage';
 import JobBoard from './pages/public/JobBoard';
-
+import Classifieds from './pages/public/Classifieds';
+import News from './pages/public/News';
 // Admin Pages
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -23,6 +23,8 @@ import ManageContributions from './pages/admin/ManageContributions';
 import ManageCalendar from './pages/admin/ManageCalendar';
 import ManageJobs from './pages/admin/ManageJobs';
 import ManageReports from './pages/admin/ManageReports';
+import ManageNews from './pages/admin/ManageNews';
+import ManageClassifieds from './pages/admin/ManageClassifieds';
 import AdminLogin from './pages/admin/AdminLogin';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
@@ -58,8 +60,9 @@ function App() {
           <Route path="campaigns" element={<Campaigns />} />
           <Route path="events" element={<Events />} />
           <Route path="calendar" element={<CalendarPage />} />
-          <Route path="members" element={<Members />} />
           <Route path="jobs" element={<JobBoard />} />
+          <Route path="classifieds" element={<Classifieds />} />
+          <Route path="news" element={<News />} />
         </Route>
 
         {/* Admin Login Route */}
@@ -75,6 +78,8 @@ function App() {
           <Route path="calendar" element={<ManageCalendar />} />
           <Route path="jobs" element={<ManageJobs />} />
           <Route path="reports" element={<ManageReports />} />
+          <Route path="news" element={<ManageNews />} />
+          <Route path="classifieds" element={<ManageClassifieds />} />
         </Route>
       </Routes>
     </BrowserRouter>

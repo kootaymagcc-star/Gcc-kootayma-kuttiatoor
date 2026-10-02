@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Heart, Calendar, Mail, Phone, MapPin, Briefcase, FileSpreadsheet, FileText } from 'lucide-react';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -54,7 +56,7 @@ export default function MemberDetailsModal({ isOpen, onClose, member }) {
     const doc = new jsPDF();
     doc.setFontSize(22);
     doc.setTextColor(13, 138, 188); 
-    doc.text("GCC Koottayma - Donor Contribution Report", 14, 22);
+    doc.text("Kuttiatoor Kootayma - Donor Contribution Report", 14, 22);
     
     doc.setFontSize(12);
     doc.setTextColor(50, 50, 50);
@@ -63,7 +65,7 @@ export default function MemberDetailsModal({ isOpen, onClose, member }) {
     doc.text(`Phone: ${member.phone || 'N/A'}`, 14, 44);
     doc.text(`Total Lifetime Contributions: ₹ ${member.totalContributions?.toLocaleString() || 0}`, 14, 50);
     
-    const tableColumn = ["Date", "Campaign", "Category", "Amount (₹)"];
+    const tableColumn = ["Date", "Campaign", "Category", "Amount (₹)", "Status", "Note"];
     const tableRows = [];
     const sortedContributions = [...contributions].sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
 
@@ -72,41 +74,77 @@ export default function MemberDetailsModal({ isOpen, onClose, member }) {
       const campaign = campaignsCache[c.campaignId]?.title || 'Unknown Campaign';
       const category = c.campaignCategory || 'General';
       const amount = c.amount.toLocaleString();
-      tableRows.push([date, campaign, category, amount]);
+      const status = c.status || 'Completed';
+      const note = c.note || '';
+      tableRows.push([date, campaign, category, amount, status, note]);
     });
 
     autoTable(doc, {
       head: [tableColumn],
       body: tableRows,
       startY: 60,
-      theme: 'striped',
-      headStyles: { fillColor: [13, 138, 188] },
+      theme: 'grid',
+      headStyles: { fillColor: [13, 138, 188], textColor: 255, fontSize: 10, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 9 },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+      styles: { cellPadding: 3 },
     });
 
     doc.save(`${member.name.replace(/ /g, '_')}_Report.pdf`);
   };
 
-  const generateExcel = () => {
+  const generateExcel = async () => {
     const sortedContributions = [...contributions].sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-    const headers = ["Date", "Campaign", "Category", "Amount (₹)"];
-    const rows = [headers.join(",")];
     
-    sortedContributions.forEach(c => {
-      const date = c.timestamp ? c.timestamp.toDate().toLocaleDateString() : 'Just now';
-      const campaign = (campaignsCache[c.campaignId]?.title || 'Unknown Campaign').replace(/"/g, '""');
-      const category = (c.campaignCategory || 'General').replace(/"/g, '""');
-      const amount = c.amount;
-      rows.push(`"${date}","${campaign}","${category}","${amount}"`);
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Contributions');
+    
+    const headers = ["Date", "Campaign", "Category", "Amount (₹)", "Status", "Note"];
+    const headerRow = worksheet.addRow(headers);
+    headerRow.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+      cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
     });
-    
-    const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.href = encodedUri;
-    link.download = `${member.name.replace(/ /g, '_')}_Report.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+
+    let total = 0;
+    sortedContributions.forEach((c, index) => {
+      const date = c.timestamp ? c.timestamp.toDate().toLocaleDateString() : 'Just now';
+      const campaign = campaignsCache[c.campaignId]?.title || 'Unknown Campaign';
+      const category = c.campaignCategory || 'General';
+      const amount = c.amount || 0;
+      const status = c.status || 'Completed';
+      const note = c.note || '';
+      total += amount;
+
+      const addedRow = worksheet.addRow([date, campaign, category, amount, status, note]);
+      addedRow.eachCell((cell, colNumber) => {
+        cell.alignment = { vertical: 'middle', horizontal: colNumber === 4 ? 'right' : 'left' };
+        cell.border = { top: {style:'thin', color: {argb:'FFE2E8F0'}}, left: {style:'thin', color: {argb:'FFE2E8F0'}}, bottom: {style:'thin', color: {argb:'FFE2E8F0'}}, right: {style:'thin', color: {argb:'FFE2E8F0'}} };
+        if (index % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+      });
+    });
+
+    // Add Total Row
+    const totalRow = worksheet.addRow(["", "", "Total (₹)", total, "", ""]);
+    totalRow.eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }; // Light amber
+      cell.border = { top: {style:'medium'}, bottom: {style:'medium'} };
+    });
+
+    worksheet.columns.forEach(column => {
+      let maxLength = 0;
+      column.eachCell({ includeEmpty: true }, cell => {
+        const columnLength = cell.value ? cell.value.toString().length : 10;
+        if (columnLength > maxLength) maxLength = columnLength;
+      });
+      column.width = maxLength < 12 ? 12 : Math.min(maxLength + 2, 50);
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), `${member.name.replace(/ /g, '_')}_Report.xlsx`);
   };
 
   return (
@@ -229,6 +267,8 @@ export default function MemberDetailsModal({ isOpen, onClose, member }) {
                       <th style={{ padding: '0.75rem 0', color: 'var(--text-muted)' }}>Campaign</th>
                       <th style={{ padding: '0.75rem 0', color: 'var(--text-muted)' }}>Category</th>
                       <th style={{ padding: '0.75rem 0', color: 'var(--text-muted)', textAlign: 'right' }}>Amount (₹)</th>
+                      <th style={{ padding: '0.75rem 0', color: 'var(--text-muted)', paddingLeft: '1rem' }}>Status</th>
+                      <th style={{ padding: '0.75rem 0', color: 'var(--text-muted)', paddingLeft: '1rem' }}>Note</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -243,6 +283,12 @@ export default function MemberDetailsModal({ isOpen, onClose, member }) {
                         </td>
                         <td style={{ padding: '0.75rem 0', textAlign: 'right', fontWeight: 600, color: 'var(--primary-dark)' }}>
                           {c.amount.toLocaleString()}
+                        </td>
+                        <td style={{ padding: '0.75rem 0', paddingLeft: '1rem' }}>
+                          <span style={{ color: c.status === 'Fund Pending' ? '#f59e0b' : '#10b981', fontWeight: 600 }}>{c.status || 'Completed'}</span>
+                        </td>
+                        <td style={{ padding: '0.75rem 0', paddingLeft: '1rem', fontStyle: 'italic', color: '#64748b' }}>
+                          {c.note || '-'}
                         </td>
                       </tr>
                     ))}
@@ -262,6 +308,10 @@ export default function MemberDetailsModal({ isOpen, onClose, member }) {
                       <span style={{ padding: '2px 8px', background: 'rgba(5, 150, 105, 0.1)', color: 'var(--primary-dark)', borderRadius: '99px', fontWeight: 600 }}>
                         {c.campaignCategory}
                       </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                      <span style={{ color: c.status === 'Fund Pending' ? '#f59e0b' : '#10b981', fontWeight: 600 }}>{c.status || 'Completed'}</span>
+                      <span style={{ fontStyle: 'italic', color: '#64748b' }}>{c.note || '-'}</span>
                     </div>
                   </div>
                 ))}

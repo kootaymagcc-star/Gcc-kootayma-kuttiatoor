@@ -7,7 +7,7 @@
   background-color: rgba(15, 23, 42, 0.6);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  z-index: 1000;
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -49,6 +49,7 @@
   cursor: pointer;
   color: var(--text-muted);
   transition: all 0.2s;
+  z-index: 50;
 }
 
 .modal-close:hover {
